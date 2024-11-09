@@ -1,0 +1,287 @@
+C51 COMPILER V9.60.0.0   PS2                                                               09/29/2022 15:46:12 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE PS2
+OBJECT MODULE PLACED IN .\Output\ps2.obj
+COMPILER INVOKED BY: E:\Keil c51v9.60\C51\BIN\C51.EXE ..\Source\ps2.c LARGE OPTIMIZE(8,SPEED) BROWSE INCDIR(..\Source;..
+                    -\User) DEBUG OBJECTEXTEND PRINT(.\List\ps2.lst) TABS(2) OBJECT(.\Output\ps2.obj)
+
+line level    source
+
+   1          
+   2          #include "STC12C5A60S2.h"
+   3          #include  <intrins.h>
+   4          #include "stdio.h"
+   5          #include "string.h"
+   6          #include "ps2.h"
+   7          
+   8          //定义SPI通信的引脚
+   9          //这里可以修改对应IO口
+  10          sbit  DATA=P1^4;     //相当于DI/MOS
+  11          sbit  CMND=P1^3;       //相当于DO/MIS
+  12          sbit  ATT=P1^2;        //相当于片选信号
+  13          sbit  CLK=P1^5;        //相当于时钟信号
+  14          
+  15          //初始化PS2时我们需要通过主机给手柄发送的数据来配置的
+  16          uchar code lx1[5]={0x01,0x43,0x00,0x01,0x00};           // 进入配置模式
+  17          uchar code lx2[9]={0x01,0x44,0x00,0x01,0x03,0x00,0x00,0x00,0x00};   // 设置模式
+  18          uchar code lx3[9]={0x01,0x4f,0x00,0xff,0xff,0x03,0x00,0x00,0x00};   // 设置字节长度
+  19          uchar code lx4[9]={0x01,0x43,0x00,0x00,0x5A,0x5A,0x5A,0x5A,0x5A};   // 退出配置模式
+  20          
+  21          //定义我们主机需要发给我们手柄的数据
+  22          uchar code scan[9]={0x01,0x42,0x00,0x00,0x00,0x00,0x00,0x00,0x00};//{0x01,0x42,0x00,0x5A,0x5A,0x5A,0x5A,0x
+             -5A,0x5A};  // 类型读取
+  23          //存储由手柄反馈给我们手机的数据
+  24          uchar  out[9];
+  25          //保存我们所需要的data[3]和data[4]即手柄的按键值      
+  26          uint FunBtn = 0xffff;
+  27                  
+  28          stPS2KeyValue stPS2key;
+  29          stPS2KeyValue * stPS2 = &stPS2key;
+  30          
+  31          /**
+  32          * Function       delayms
+  33          * @author        Danny
+  34          * @date          2017.08.16
+  35          * @brief         延时函数
+  36          * @param         xms：延时时间（ms）
+  37          * @retval        void
+  38          * @par History   无
+  39          */  
+  40          void delayms(uint xms)           
+  41          {
+  42   1         uint i,j;   
+  43   1         for(i=xms;i>0;i--)
+  44   1            for(j=850;j>0;j--);
+  45   1      }
+  46          
+  47          /**
+  48          * Function       delay
+  49          * @author        Danny
+  50          * @date          2017.08.16
+  51          * @brief         延时函数
+  52          * @param         延时一个指令周期
+  53          * @retval        void
+C51 COMPILER V9.60.0.0   PS2                                                               09/29/2022 15:46:12 PAGE 2   
+
+  54          * @par History   无
+  55          */  
+  56          
+  57          static void delay(uint n)       //计时不准确
+  58          {
+  59   1        uint i;
+  60   1        for(i=0;i<=n;i++) 
+  61   1            _nop_();                 //空指令延时一个指令周期
+  62   1          _nop_();  
+  63   1          _nop_();
+  64   1          _nop_();
+  65   1          _nop_();
+  66   1          _nop_();
+  67   1          _nop_();
+  68   1          _nop_();  
+  69   1          _nop_();
+  70   1          _nop_();
+  71   1          _nop_();
+  72   1          _nop_();
+  73   1          _nop_();
+  74   1          _nop_();  
+  75   1          _nop_();        
+  76   1      }
+  77          
+  78          
+  79          /**
+  80          * Function       spi_write
+  81          * @author        Danny
+  82          * @date          2017.08.16
+  83          * @brief         向SPI器件（手柄）中写入一个的数据
+  84          * @param         command:要写入到手柄的数据
+  85          * @retval        void
+  86          * @par History   无
+  87          */
+  88          void spi_write(uchar command)      
+  89          {
+  90   1          uchar i;
+  91   1          for(i=0; i<=7; i++)              //将数据一位一位的写入SPI器件 
+  92   1          {
+  93   2          if(command&0x01)           //取出写入的数据的最右边的一位
+  94   2            CMND=1;                  //代表主机入从机出
+  95   2            else
+  96   2            CMND=0;
+  97   2          command=command>>1;         //将要写入的数据右移一位，
+  98   2          _nop_();                  //必须要加延时，否则会因为操作太快而不响应。
+  99   2          _nop_();
+ 100   2          CLK=0;                      //上升沿写入数据
+ 101   2          delay(10*10);                   
+ 102   2          CLK=1;
+ 103   2          delay(1*10);
+ 104   2          }
+ 105   1        CMND=1;
+ 106   1      }
+ 107          
+ 108          /**
+ 109          * Function       spi_read
+ 110          * @author        Danny
+ 111          * @date          2017.08.16
+ 112          * @brief         从SPI器件中读出一个的数据
+ 113          * @param         void
+ 114          * @retval        void
+ 115          * @par History   无
+C51 COMPILER V9.60.0.0   PS2                                                               09/29/2022 15:46:12 PAGE 3   
+
+ 116          */
+ 117          static uchar spi_read(uchar command)      
+ 118          {
+ 119   1          uchar i,j=1;
+ 120   1        uchar res=0; 
+ 121   1          for(i=0; i<=7; i++)          
+ 122   1          {
+ 123   2          if(command&0x01)             //将数据一位一位的从SPI器件中读取出来
+ 124   2            CMND=1;          //主入从出
+ 125   2          else
+ 126   2            CMND=0;
+ 127   2          command = command >> 1;     //将要读出的数据右移一位，
+ 128   2          _nop_();                  //必须要加延时，否则会因为操作太快而不响应。
+ 129   2          _nop_();
+ 130   2          CLK=0;
+ 131   2          delay(2);
+ 132   2          if(DATA)                   //如果DATA为真的话，则代表主机出从机入（接收模块发送出数据，也就是从SPI器件中
+             -读出一个数据）
+ 133   2          res = res + j;
+ 134   2          j=j<<1; 
+ 135   2          CLK=1;
+ 136   2          delay(5);    
+ 137   2          }
+ 138   1          CMND=1;
+ 139   1          return res;                    //res是读出来的数据,也就是手柄反馈给主机的数据
+ 140   1      }
+ 141           
+ 142          /**
+ 143          * Function       PS2_Init
+ 144          * @author        Danny
+ 145          * @date          2017.08.16
+ 146          * @brief         PS2初始化
+ 147          * @param         void
+ 148          * @retval        void
+ 149          * @par History   无
+ 150          */  
+ 151          void PS2_Init()
+ 152          {
+ 153   1          uchar i =0;
+ 154   1          //out数组初始化
+ 155   1        for(i=0; i<9; i++)    
+ 156   1        {
+ 157   2            out[i]=0x00;  
+ 158   2        }  
+ 159   1        //片选信号清零,主从机在通信的过程中需要将片选线拉低的
+ 160   1        ATT=0;
+ 161   1        delay(7);
+ 162   1        for(i=0;i<9;i++)  
+ 163   1        {
+ 164   2          out[i]=spi_read(scan[i]);
+ 165   2          delay(7);
+ 166   2        } 
+ 167   1        ATT=1;
+ 168   1        delayms(15);
+ 169   1       
+ 170   1          //片选信号清零,主从机在通信的过程中需要将片选线拉低的
+ 171   1        //通过主机向手柄中写入数据来配置手柄
+ 172   1        ATT=0;
+ 173   1        delay(7);
+ 174   1        for(i=0; i<5; i++)  
+ 175   1        {
+ 176   2          spi_write(lx1[i]);       //进入配置模式
+C51 COMPILER V9.60.0.0   PS2                                                               09/29/2022 15:46:12 PAGE 4   
+
+ 177   2          delay(7); 
+ 178   2        } 
+ 179   1          ATT=1;
+ 180   1        delayms(8); 
+ 181   1      
+ 182   1          //片选信号清零,主从机在通信的过程中需要将片选线拉低的
+ 183   1        //通过主机向手柄中写入数据来配置手柄
+ 184   1        ATT=0;
+ 185   1        delay(7);
+ 186   1        for(i=0; i<9; i++)        //配置模式
+ 187   1        {
+ 188   2          spi_write(lx2[i]);
+ 189   2          delay(7);                               
+ 190   2        } 
+ 191   1        ATT=1;
+ 192   1        delayms(8); 
+ 193   1      
+ 194   1          //片选信号清零,主从机在通信的过程中需要将片选线拉低的
+ 195   1        //通过主机向手柄中写入数据来配置手柄
+ 196   1        ATT=0;
+ 197   1        delay(7);    
+ 198   1        for(i=0; i<9; i++)  
+ 199   1        {               //设置字节长度
+ 200   2          spi_write(lx3[i]);
+ 201   2          delay(7); 
+ 202   2        } 
+ 203   1        ATT=1;
+ 204   1        delayms(8); 
+ 205   1        
+ 206   1        //片选信号清零,主从机在通信的过程中需要将片选线拉低的
+ 207   1        //通过主机向手柄中写入数据来配置手柄
+ 208   1        ATT=0;
+ 209   1        delay(7); 
+ 210   1        for(i=0; i<9; i++)        //退出配置模式
+ 211   1        {
+ 212   2          spi_write(lx4[i]);
+ 213   2          delay(7); 
+ 214   2        } 
+ 215   1        ATT=1;
+ 216   1        delayms(8); 
+ 217   1          
+ 218   1      }
+ 219          
+ 220          /**
+ 221          * Function       ReadPS2KeyValue
+ 222          * @author        Danny
+ 223          * @date          2017.08.16
+ 224          * @brief         PS2按键检测
+ 225          * @param         void
+ 226          * @retval        void
+ 227          * @par History   无
+ 228          */  
+ 229          stPS2KeyValue* ReadPS2KeyValue(void)
+ 230          {
+ 231   1          
+ 232   1          //保存我们所需要的data[3]和data[4]即手柄的按键值
+ 233   1        //只不过我们这里用的是局部变量
+ 234   1        uint funbtn = 0xffff;
+ 235   1        uchar i =0;
+ 236   1        ATT=0;
+ 237   1        for(i=0;i<9;i++)  //更新扫描按键
+ 238   1        {
+C51 COMPILER V9.60.0.0   PS2                                                               09/29/2022 15:46:12 PAGE 5   
+
+ 239   2          out[i]=spi_read(scan[i]); 
+ 240   2        } 
+ 241   1        ATT=1;
+ 242   1        //把读到的data[3]和data[4]保存在funbtn中去
+ 243   1        funbtn = ((uint)out[4] << 8) | out[3];
+ 244   1        //把从手柄检测按键按下的数据提取出来赋给全局变量
+ 245   1        stPS2->FunBtn = funbtn;
+ 246   1        //后面的5,6,7,8则分别是我们的摇杆数据
+ 247   1        stPS2->X1 = out[7];
+ 248   1        stPS2->Y1 = out[8];
+ 249   1        stPS2->X2 = out[5];
+ 250   1        stPS2->Y2 = out[6];
+ 251   1        return stPS2;
+ 252   1      }
+ 253          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    629    ----
+   CONSTANT SIZE    =     41    ----
+   XDATA SIZE       =     20       5
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

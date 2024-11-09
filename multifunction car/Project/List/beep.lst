@@ -1,0 +1,110 @@
+C51 COMPILER V9.60.0.0   BEEP                                                              09/29/2022 21:16:52 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE BEEP
+OBJECT MODULE PLACED IN .\Output\beep.obj
+COMPILER INVOKED BY: E:\Keil c51v9.60\C51\BIN\C51.EXE ..\Source\beep.c LARGE OPTIMIZE(8,SPEED) BROWSE INCDIR(..\Source;.
+                    -.\User) DEBUG OBJECTEXTEND PRINT(.\List\beep.lst) TABS(2) OBJECT(.\Output\beep.obj)
+
+line level    source
+
+   1          #include "delay.h"
+   2          #include "beep.h" 
+   3          
+   4          /**************************************************************************************
+   5          功能描述：对PWM2（P3.7引脚）进行初始化
+   6          入口参数：无
+   7          返回值：无
+   8           **************************************************************************************/
+   9          void PWM2_P37_Configuration(void)
+  10          {
+  11   1        PWMCFG &= 0xBF;            //将CBTADC位置0，即PWM计数器归零时不触发ADC转换
+  12   1        PWMIF &= 0xBF;             //将CBIF位置0，PWM计数器归零中断标志位，需软件清零
+  13   1        
+  14   1        P_SW2 |= 0x80;             //将EAXSFR位置1，以访问PWM在扩展RAM区的特殊功能寄存器
+  15   1        //对PWM2的初始化部分
+  16   1        PWM2CR &= 0xF7;            //将PWM2_PS位置0，选择PWM2的输出引脚是P3.7
+  17   1        PWMCR |= 0x01;             //将ENC2O位置1，PWM2的端口为PWM输出口，受PWM波形发生器控制 
+  18   1        PWMCFG &= 0xFE;            //将C2INI位置0，设置PWM2输出端口的初始电平为低电平
+  19   1        PWMIF &= 0xFE;             //将C2IF位置0，PWM2中断标志位，需软件清零
+  20   1        PWM2CR |= 0x04;            //将EPWM2I位置1，使能PWM2中断
+  21   1        PWM2CR &= 0xFD;            //将EC2T2SI位置0，关闭T2翻转时中断
+  22   1        PWM2CR &= 0xFE;            //将EC2T1SI位置0，关闭T1翻转时中断
+  23   1        //对PWM2和PWM3翻转计数器赋初值
+  24   1        PWM2T1 = 0x007D;           //赋值PWM2第一次翻转计数器值
+  25   1        PWM2T2 = 0x00FA;           //赋值PWM2第二次翻转计数器值
+  26   1        
+  27   1        //对PWM波形发生器时钟源进行初始化
+  28   1        PWMCKS |= 0x10;            //将SELT2位置1，PWM时钟源为定时器2溢出脉冲
+  29   1        PWMC = 0x00FA;             //PWM计数器赋值（同时对PWMCH和PWMCL进行了赋值）
+  30   1        AUXR |= 0x04;              //定时器2时钟为Fosc,即1T
+  31   1        T2L = 0xE0;                //设定定时初值
+  32   1        T2H = 0xFE;                //设定定时初值
+  33   1        AUXR |= 0x10;              //启动定时器2
+  34   1        P_SW2 &= 0x7F;             //将EAXSFR位置0，恢复访问XRAM
+  35   1        
+  36   1        //PWM外部异常控制寄存器的操作
+  37   1        PWMFDCR &= 0xDF;           //将ENFD位置0，关闭PWM外部异常检测功能
+  38   1        PWMFDCR &= 0xF7;           //将ENDI位置0，关闭PWM异常检测中断
+  39   1        PWMFDCR &= 0xFB;           //将FDCMP位置0，比较器与PWM无关
+  40   1        PWMFDCR &= 0xFD;           //将FDIO位置0，P2.4的状态与PWM无关
+  41   1        PWMFDCR &= 0xFE;           //将FDIF位置0，PWM异常检测中断标志位，需软件清零
+  42   1        
+  43   1        IP2 |= 0x40;               //将PPWM位置1，使能PWM中断为最高优先级中断
+  44   1        //使能PWM波形发生器
+  45   1        PWMCR |= 0x80;             //将ENPWM位置1，使能PWM波形发生器，PWM计数器开始计数
+  46   1        PWMCR &= 0xBF;             //将ECBI位置0，禁止PWM计数器归零中断
+  47   1      }
+  48          
+  49          /***************************************************************************
+  50           * 描  述 : 开启蜂鸣器
+  51           * 入  参 : 无
+  52           * 返回值 : 无
+  53           **************************************************************************/
+  54          void  BEEP_on(void)
+C51 COMPILER V9.60.0.0   BEEP                                                              09/29/2022 21:16:52 PAGE 2   
+
+  55          {
+  56   1          PWM2_P37_Configuration();
+  57   1          EA = 1;                     //允许总中断
+  58   1      }
+  59          
+  60          /***************************************************************************
+  61           * 描  述 : 关闭蜂鸣器
+  62           * 入  参 : 无
+  63           * 返回值 : 无
+  64           **************************************************************************/
+  65          void  BEEP_off(void)
+  66          {
+  67   1          EA = 0;                    //关闭总中断
+  68   1          PWMCR &= 0x7F;             //将ENPWM位置0，禁止PWM波形发生器，PWM计数器停止计数
+  69   1      }
+  70          
+  71          /***************************************************************************
+  72           * 描  述 : PWM中断服务函数
+  73           * 入  参 : 无
+  74           * 返回值 : 无
+  75           **************************************************************************/
+  76          void PWM(void) interrupt PWM_VECTOR using 1
+  77          {
+  78   1        PWMIF &= 0xBF;             //将CBIF位置0，PWM计数器归零中断标志位，需软件清零
+  79   1        PWMIF &= 0xFE;             //将C2IF位置0，PWM2中断标志位，需软件清零
+  80   1        PWMIF &= 0xFD;             //将C3IF位置0，PWM3中断标志位，需软件清零
+  81   1      }
+  82          
+  83          /*********************************END FILE********************************************/ 
+  84          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    131    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

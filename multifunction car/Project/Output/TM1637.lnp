@@ -1,0 +1,7 @@
+".\Output\main.obj",
+".\Output\delay.obj",
+".\Output\ps2.obj",
+".\Output\beep.obj" 
+TO ".\Output\TM1637" 
+PRINT(".\List\TM1637.m51") RAMSIZE(256) 
+DISABLEWARNING (16) 
